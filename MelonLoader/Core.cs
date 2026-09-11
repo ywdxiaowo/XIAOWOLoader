@@ -8,7 +8,9 @@ using HarmonyLib;
 using MelonLoader.Resolver;
 using MelonLoader.Utils;
 using MelonLoader.InternalUtils;
+using MelonLoader.Logging;
 using MelonLoader.Melons;
+using MelonLoader.Pastel;
 using MonoMod.RuntimeDetour;
 using MonoMod.RuntimeDetour.Platforms;
 
@@ -21,6 +23,54 @@ namespace MelonLoader
     internal static class Core
     {
         private static bool _success = true;
+
+        private static readonly string[][] XiaowoBannerGlyphs =
+        {
+            new[]
+            {
+                "................", ".........##.....", "..#...########..", "..##..##.##.##..",
+                "...#..########..", ".....##########.", ".##..##########.", ".###..########..",
+                "..##..##.#..##..", "..##..##.#..##..", "..##..#..#.#....", "..##...###.###..",
+                "..##.###.....#..", "..####..........", ".##.###########.", "..........####.."
+            },
+            new[]
+            {
+                "................", ".......#........", ".......##.......", "........#.......",
+                ".##############.", "....#...........", "....#...........", "....#########...",
+                "....#########...", "........#.......", "..#..#..#...##..", "..#..#..##..##..",
+                ".##..#.....#.##.", ".##..#....##..#.", ".#...#######....", "................"
+            },
+            new[]
+            {
+                "....#.....#.....", "...##....##.....", "...##....##.....", ".######..######.",
+                ".##...#.##...##.", ".##...###....##.", ".##...#.#....##.", ".######..##..##.",
+                ".######...#..##.", ".##...#...##.##.", ".##...#......#..", ".##...#......#..",
+                ".######......#..", ".##...#...####..", "...........#....", "................"
+            },
+            new[]
+            {
+                ".......##.......", ".......##.......", ".......##.......", ".......##.......",
+                "....#..##..#....", "...##..##..##...", "...##..##..##...", "...#...##...##..",
+                "..##...##...##..", "..#....##....##.", ".##....##....#..", ".......##.......",
+                ".......##.......", "......###.......", "......#.........", "................"
+            },
+            new[]
+            {
+                "................", ".......##.......", ".##############.", ".##..#....#...#.",
+                ".#.####...###...", "..###.......##..", "...##########...", "...##.......#...",
+                "...##########...", ".......##.......", "..#############.", "..#....##....##.",
+                "..#...#####..##.", "..#.###...#..##.", "..#.........###.", "..#.........##.."
+            }
+        };
+
+        private static readonly ColorARGB[] XiaowoBannerColors =
+        {
+            ColorARGB.FromArgb(74, 222, 255),
+            ColorARGB.FromArgb(80, 230, 160),
+            ColorARGB.FromArgb(255, 214, 80),
+            ColorARGB.FromArgb(255, 142, 70),
+            ColorARGB.FromArgb(255, 95, 160)
+        };
 
         internal static HarmonyLib.Harmony HarmonyInstance;
         internal static bool Is_ALPHA_PreRelease = false;
@@ -241,6 +291,8 @@ namespace MelonLoader
             //if (MelonDebug.IsEnabled())
                 MelonLogger.WriteSpacer();
 
+            PrintXiaowoBanner();
+            MelonLogger.WriteSpacer();
             MelonLogger.MsgDirect("------------------------------");
             MelonLogger.MsgDirect(GetVersionString());
             MelonLogger.MsgDirect($"OS: {MelonUtils.GetOSVersion()}");
@@ -259,6 +311,33 @@ namespace MelonLoader
                     MelonLogger.MsgDirect($"   {pair.Key} = {pair.Value}");
             MelonLogger.MsgDirect("------------------------------");
             MelonEnvironment.PrintEnvironment();
+        }
+
+        private static void PrintXiaowoBanner()
+        {
+            for (var row = 0; row < 16; row += 2)
+            {
+                var line = string.Empty;
+                for (var glyphIndex = 0; glyphIndex < XiaowoBannerGlyphs.Length; glyphIndex++)
+                {
+                    if (glyphIndex > 0)
+                        line += "  ";
+
+                    var pixels = new char[16];
+                    for (var column = 0; column < pixels.Length; column++)
+                    {
+                        var upper = XiaowoBannerGlyphs[glyphIndex][row][column] == '#';
+                        var lower = XiaowoBannerGlyphs[glyphIndex][row + 1][column] == '#';
+                        pixels[column] = upper
+                            ? lower ? '\u2588' : '\u2580'
+                            : lower ? '\u2584' : ' ';
+                    }
+
+                    line += new string(pixels).Pastel(XiaowoBannerColors[glyphIndex]);
+                }
+
+                MelonLogger.MsgPastelDirect(line);
+            }
         }
 
         internal static void Quit()
