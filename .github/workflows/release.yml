@@ -6,6 +6,7 @@ on:
   push:
     tags:
       - '*.*.*'
+      - '!xiaowo-v*'
 
 jobs:
   fix_tag_version:

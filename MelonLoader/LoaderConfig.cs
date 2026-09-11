@@ -48,6 +48,7 @@ public class LoaderConfig
             {
                 var doc = TomlParser.ParseFile(path);
                 Current = TomletMain.To<LoaderConfig>(doc) ?? new LoaderConfig();
+                Current.Network ??= new NetworkConfig();
                 SaveFile(path);
             }
             catch
@@ -62,6 +63,7 @@ public class LoaderConfig
         LogsConfig.Initialize();
         MonoDebugServerConfig.Initialize();
         UnityEngineConfig.Initialize();
+        NetworkConfig.Initialize();
     }
 
     private static void TrySaveFile(string path)
@@ -99,6 +101,87 @@ public class LoaderConfig
 
     [TomlProperty("unityengine")]
     public UnityEngineConfig UnityEngine { get; internal set; } = new();
+
+    [TomlProperty("network")]
+    public NetworkConfig Network { get; internal set; } = new();
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public class NetworkConfig
+    {
+#if BOOTSTRAP
+        internal static void Initialize()
+        {
+            Current.Network ??= new NetworkConfig();
+
+            var mirrorBaseUrl = ArgParser.GetValue("melonloader.mirror");
+            if (!string.IsNullOrWhiteSpace(mirrorBaseUrl))
+                Current.Network.MirrorBaseUrl = mirrorBaseUrl;
+
+            var proxyUrl = ArgParser.GetValue("melonloader.proxy");
+            if (proxyUrl != null)
+                Current.Network.ProxyUrl = proxyUrl;
+
+            if (ArgParser.IsDefined("melonloader.nomirror"))
+                Current.Network.MirrorEnabled = false;
+
+            if (ArgParser.IsDefined("melonloader.nooriginalsource"))
+                Current.Network.FallbackToOriginalSource = false;
+        }
+#endif
+
+        [TomlProperty("mirror_enabled")]
+        [TomlPrecedingComment("Attempts to download supported GitHub resources through mirror_base_url before using the original URL. Equivalent to the '--melonloader.nomirror' launch option when disabled")]
+        public bool MirrorEnabled { get; internal set; } = true;
+
+        [TomlProperty("mirror_base_url")]
+        [TomlPrecedingComment("Base URL for the download mirror. Equivalent to the '--melonloader.mirror' launch option")]
+        public string MirrorBaseUrl { get; internal set; } = "https://cdn.ywdxiaowo.com";
+
+        [TomlProperty("fallback_to_original_source")]
+        [TomlPrecedingComment("Falls back to the original GitHub URL when the mirror is unavailable. Equivalent to the '--melonloader.nooriginalsource' launch option when disabled")]
+        public bool FallbackToOriginalSource { get; internal set; } = true;
+
+        [TomlProperty("proxy_url")]
+        [TomlPrecedingComment("Optional HTTP or SOCKS proxy used for all MelonLoader downloads. Equivalent to the '--melonloader.proxy' launch option")]
+        public string ProxyUrl { get; internal set; } = "";
+
+        [TomlProperty("download_timeout_seconds")]
+        public int DownloadTimeoutSeconds { get; internal set; } = 180;
+
+        [TomlProperty("connect_timeout_seconds")]
+        public int ConnectTimeoutSeconds { get; internal set; } = 5;
+
+        [TomlProperty("remote_api_timeout_seconds")]
+        public int RemoteApiTimeoutSeconds { get; internal set; } = 8;
+
+        [TomlProperty("retry_count")]
+        public int RetryCount { get; internal set; } = 2;
+
+        internal string[] GetDownloadUrls(string originalUrl)
+        {
+            var urls = new System.Collections.Generic.List<string>();
+            if (MirrorEnabled
+                && !string.IsNullOrEmpty(MirrorBaseUrl)
+                && MirrorBaseUrl.Trim().Length > 0
+                && System.Uri.TryCreate(originalUrl, System.UriKind.Absolute, out var originalUri)
+                && originalUri != null
+                && (originalUri.Host.Equals("github.com", System.StringComparison.OrdinalIgnoreCase)
+                    || originalUri.Host.Equals("raw.githubusercontent.com", System.StringComparison.OrdinalIgnoreCase)
+                    || originalUri.Host.EndsWith(".githubusercontent.com", System.StringComparison.OrdinalIgnoreCase)))
+            {
+                var mirrorUrl = MirrorBaseUrl.TrimEnd('/')
+                    + "/"
+                    + originalUri.Host
+                    + originalUri.PathAndQuery;
+                urls.Add(mirrorUrl);
+            }
+
+            if (FallbackToOriginalSource || urls.Count == 0)
+                urls.Add(originalUrl);
+
+            return urls.ToArray();
+        }
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public class CoreConfig

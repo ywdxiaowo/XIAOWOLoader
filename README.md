@@ -6,6 +6,21 @@
 
 ---
 
+## XIAOWOLOADER BUILDS
+
+This fork attempts supported GitHub downloads through `cdn.ywdxiaowo.com` first and falls back to the original source when the gateway is unavailable.
+
+Compiled Windows builds are published on the [XIAOWOLoader Releases page](https://github.com/ywdxiaowo/XIAOWOLoader/releases). Download `XIAOWOLoader.Windows.x64.zip` for a normal 64-bit game. The upstream MelonLoader Installer is not included because it may install the official build instead of this fork.
+
+Maintainers can create a release with a dedicated tag that does not trigger the upstream publishing workflow:
+
+```powershell
+git tag xiaowo-v0.7.3-xiaowo.1
+git push origin xiaowo-v0.7.3-xiaowo.1
+```
+
+---
+
 <p align="center">
 	<a href="https://github.com/LavaGang/MelonLoader/releases/latest"><img src="https://img.shields.io/github/v/release/LavaGang/MelonLoader?label=latest&style=for-the-badge"></a>
 	<a href="https://github.com/LavaGang/MelonLoader/releases"><img src="https://img.shields.io/github/downloads/LavaGang/MelonLoader/total.svg?style=for-the-badge"></a>
@@ -177,6 +192,20 @@ force_regeneration = false
 enable_cpp2il_call_analyzer = false
 # Enables the NativeMethodDetector processor for Cpp2IL. Equivalent to the '--cpp2il.nativemethoddetector' launch option
 enable_cpp2il_native_method_detector = false
+
+[network]
+# Attempts supported GitHub downloads through the XIAOWOLoader mirror first
+mirror_enabled = true
+# Mirror layout: <base>/<original-host>/<original-path>
+mirror_base_url = "https://cdn.ywdxiaowo.com"
+# Falls back to the original GitHub URL when the mirror is unavailable
+fallback_to_original_source = true
+# Optional HTTP or SOCKS proxy. Leave empty to use the operating system defaults
+proxy_url = ""
+download_timeout_seconds = 180
+connect_timeout_seconds = 5
+remote_api_timeout_seconds = 8
+retry_count = 2
 ```
 
 ---
@@ -206,6 +235,10 @@ enable_cpp2il_native_method_detector = false
 | --melonloader.loadmodemods | Load Mode for Mods [ Default: 0 ] |
 | --melonloader.basedir | Changes the Proxy's Load Directory for the Bootstrap |
 | --melonloader.disablestartscreen | Disable the Start Screen |
+| --melonloader.mirror | Override the download mirror base URL |
+| --melonloader.nomirror | Disable the download mirror |
+| --melonloader.proxy | Use an HTTP or SOCKS proxy for MelonLoader network requests |
+| --melonloader.nooriginalsource | Do not fall back to the original GitHub download URL |
 
 
 - These ones below are Unity Engine specific Launch Options.

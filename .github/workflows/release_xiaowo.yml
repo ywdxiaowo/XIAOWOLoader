@@ -1,0 +1,76 @@
+name: Release XIAOWOLoader
+
+run-name: ${{ github.ref_name }} | XIAOWOLoader Release
+
+on:
+  push:
+    tags:
+      - 'xiaowo-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Validate version tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Parse version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#xiaowo-v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Expected a tag such as xiaowo-v0.7.3-xiaowo.1" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    name: Build Windows packages
+    needs: version
+    uses: ./.github/workflows/compile_windows.yml
+    with:
+      VERSION: ${{ needs.version.outputs.version }}
+      SKIP_DEBUG: true
+
+  publish:
+    name: Publish GitHub release
+    needs: [version, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows x64 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: MelonLoader.Windows.x64.CI.Release
+          path: staging/windows-x64
+
+      - name: Download Windows x86 artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: MelonLoader.Windows.x86.CI.Release
+          path: staging/windows-x86
+
+      - name: Package release files
+        shell: bash
+        run: |
+          mkdir -p packaged
+          (cd staging/windows-x64 && zip -r ../../packaged/XIAOWOLoader.Windows.x64.zip .)
+          (cd staging/windows-x86 && zip -r ../../packaged/XIAOWOLoader.Windows.x86.zip .)
+          (cd packaged && sha256sum *.zip > SHA256SUMS.txt)
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" packaged/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" packaged/* \
+              --verify-tag \
+              --title "XIAOWOLoader ${{ needs.version.outputs.version }}" \
+              --generate-notes
+          fi

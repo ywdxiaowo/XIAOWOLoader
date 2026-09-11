@@ -20,22 +20,44 @@ namespace MelonLoader.Il2CppAssemblyGenerator
                 return false;
             }
 
-            if (File.Exists(destination))
-                File.Delete(destination);
+            var partPath = destination + ".part";
+            var urls = LoaderConfig.Current.Network.GetDownloadUrls(url);
+            var retryCount = Math.Max(0, Math.Min(LoaderConfig.Current.Network.RetryCount, 5));
+            Exception lastException = null;
 
-            Core.Logger.Msg($"Downloading {url} to {destination}");
-            try { Core.webClient.DownloadFile(url, destination); }
-            catch (Exception ex)
+            for (var urlIndex = 0; urlIndex < urls.Length; urlIndex++)
             {
-                Core.Logger.Error(ex.ToString());
+                var downloadUrl = urls[urlIndex];
+                var retriesForUrl = urlIndex == 0 && urls.Length > 1 ? 0 : retryCount;
+                for (var attempt = 0; attempt <= retriesForUrl; attempt++)
+                {
+                    if (File.Exists(partPath))
+                        File.Delete(partPath);
 
-                if (File.Exists(destination))
-                    File.Delete(destination);
+                    Core.Logger.Msg($"Downloading {downloadUrl} to {destination}");
+                    try
+                    {
+                        Core.webClient.DownloadFile(downloadUrl, partPath);
+                        if (File.Exists(destination))
+                            File.Delete(destination);
+                        File.Move(partPath, destination);
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastException = ex;
+                        if (File.Exists(partPath))
+                            File.Delete(partPath);
+                    }
 
-                return false;
+                    if (attempt < retriesForUrl)
+                        System.Threading.Thread.Sleep(1000 << attempt);
+                }
             }
 
-            return true;
+            if (lastException != null)
+                Core.Logger.Error(lastException.ToString());
+            return false;
         }
 
         internal static bool Process(string filepath, string destination, string targetName = null)

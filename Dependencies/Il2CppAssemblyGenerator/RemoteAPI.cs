@@ -70,9 +70,11 @@ namespace MelonLoader.Il2CppAssemblyGenerator
                 string Response = null;
                 try
                 {
-                    var result = Core.webClient.GetAsync(info.URL).Result;
+                    using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(1,
+                        Math.Min(LoaderConfig.Current.Network.RemoteApiTimeoutSeconds, 60))));
+                    using var result = Core.webClient.GetAsync(info.URL, timeout.Token).GetAwaiter().GetResult();
                     result.EnsureSuccessStatusCode();
-                    Response = result.Content.ReadAsStringAsync().Result;
+                    Response = result.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {

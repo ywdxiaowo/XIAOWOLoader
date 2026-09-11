@@ -1,5 +1,3 @@
-﻿using System.Diagnostics;
-
 namespace MelonLoader.Bootstrap.RuntimeHandlers.Dotnet;
 
 internal class FileDownload
@@ -10,72 +8,120 @@ internal class FileDownload
     {
         URL = url;
     }
-    
-    public (bool, HttpResponseMessage?) Attempt(string filePath)
+
+    public (bool, string?) Attempt(string filePath)
         => AttemptAsync(filePath).GetAwaiter().GetResult();
-    private async Task<(bool, HttpResponseMessage?)> AttemptAsync(string filePath)
+
+    private async Task<(bool, string?)> AttemptAsync(string filePath)
     {
-        var http = new HttpClient();
-        http.DefaultRequestHeaders.Add("User-Agent", "MelonLoader");
-
         var filePathDir = Path.GetDirectoryName(filePath);
-        HttpResponseMessage? resp = null;
-        try
-        {
-            if (!Directory.Exists(filePathDir))
-                Directory.CreateDirectory(filePathDir!);
-            
-            resp = await http.GetAsync(URL, HttpCompletionOption.ResponseHeadersRead);
-            if (!resp.IsSuccessStatusCode)
-                return (false, resp);
-            
-            long? totalBytes = resp.Content.Headers.ContentLength;
-            Stream contentStream = await resp.Content.ReadAsStreamAsync();
-            FileStream fileStream = new(
-                filePath,
-                FileMode.CreateNew,
-                FileAccess.ReadWrite,
-                FileShare.None,
-                bufferSize: 8192,
-                useAsync: true);
-            
-            byte[] buffer = new byte[8192];
-            long totalBytesRead = 0;
-            int bytesRead;
-            int lastProgress = -1;
-            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-            {
-                await fileStream.WriteAsync(buffer, 0, bytesRead);
+        if (!Directory.Exists(filePathDir))
+            Directory.CreateDirectory(filePathDir!);
 
-                totalBytesRead += bytesRead;
-                if (totalBytes.HasValue)
+        var partPath = filePath + ".part";
+        var urls = LoaderConfig.Current.Network.GetDownloadUrls(URL!);
+        var retryCount = Math.Clamp(LoaderConfig.Current.Network.RetryCount, 0, 5);
+        string? lastError = null;
+
+        for (var urlIndex = 0; urlIndex < urls.Length; urlIndex++)
+        {
+            var url = urls[urlIndex];
+            var retriesForUrl = urlIndex == 0 && urls.Length > 1 ? 0 : retryCount;
+            for (var attempt = 0; attempt <= retriesForUrl; attempt++)
+            {
+                if (File.Exists(partPath))
+                    File.Delete(partPath);
+
+                try
                 {
-                    int progress = (int)((totalBytesRead * 100L) / totalBytes.Value);
-                    if (progress != lastProgress)
+                    using var handler = new SocketsHttpHandler
                     {
-                        lastProgress = progress;
-                        Core.Logger.Msg(progress + "%");
-                    }
-                }
-            }
-            contentStream.Close();
-            fileStream.Close();
+                        ConnectTimeout = TimeSpan.FromSeconds(Math.Clamp(
+                            LoaderConfig.Current.Network.ConnectTimeoutSeconds,
+                            1,
+                            60))
+                    };
 
-            if ((lastProgress != 100)
-                || !resp.IsSuccessStatusCode)
-            {
-                if (File.Exists(filePath))
-                    File.Delete(filePath);
-                return (false, resp);
+                    if (!string.IsNullOrWhiteSpace(LoaderConfig.Current.Network.ProxyUrl))
+                    {
+                        handler.Proxy = new System.Net.WebProxy(LoaderConfig.Current.Network.ProxyUrl);
+                        handler.UseProxy = true;
+                    }
+
+                    using var http = new HttpClient(handler)
+                    {
+                        Timeout = TimeSpan.FromSeconds(Math.Clamp(
+                            LoaderConfig.Current.Network.DownloadTimeoutSeconds,
+                            10,
+                            3600))
+                    };
+                    http.DefaultRequestHeaders.Add("User-Agent", "MelonLoader");
+
+                    Core.Logger.Msg($"Downloading from: {url}");
+                    using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        lastError = $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                        continue;
+                    }
+
+                    var totalBytes = resp.Content.Headers.ContentLength;
+                    await using var contentStream = await resp.Content.ReadAsStreamAsync();
+                    await using var fileStream = new FileStream(
+                        partPath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None,
+                        bufferSize: 81920,
+                        useAsync: true);
+
+                    var buffer = new byte[81920];
+                    long totalBytesRead = 0;
+                    var lastProgress = -1;
+                    int bytesRead;
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer, 0, bytesRead);
+                        totalBytesRead += bytesRead;
+
+                        if (totalBytes is > 0)
+                        {
+                            var progress = (int)((totalBytesRead * 100L) / totalBytes.Value);
+                            if (progress != lastProgress)
+                            {
+                                lastProgress = progress;
+                                Core.Logger.Msg(progress + "%");
+                            }
+                        }
+                    }
+
+                    await fileStream.FlushAsync();
+                    if (totalBytes.HasValue && totalBytesRead != totalBytes.Value)
+                    {
+                        lastError = $"Incomplete download: expected {totalBytes.Value} bytes, received {totalBytesRead} bytes";
+                        continue;
+                    }
+
+                    if (File.Exists(filePath))
+                        File.Delete(filePath);
+                    File.Move(partPath, filePath);
+                    return (true, null);
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex.Message;
+                }
+                finally
+                {
+                    if (File.Exists(partPath))
+                        File.Delete(partPath);
+                }
+
+                if (attempt < retriesForUrl)
+                    await Task.Delay(TimeSpan.FromSeconds(1 << attempt));
             }
         }
-        catch (Exception ex)
-        {
-            if (File.Exists(filePath))
-                File.Delete(filePath);
-            throw ex;
-        }
-        
-        return (true, resp);
+
+        return (false, lastError);
     }
 }

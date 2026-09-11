@@ -1,0 +1,105 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      branch: ${{ steps.sync.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream into a review branch
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: automation/upstream-sync
+          UPSTREAM_URL: https://github.com/LavaGang/MelonLoader.git
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch upstream master
+          git fetch origin "$SYNC_BRANCH:refs/remotes/origin/$SYNC_BRANCH" || true
+
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          start_point="HEAD"
+          if git show-ref --verify --quiet "refs/remotes/origin/$SYNC_BRANCH"; then
+            start_point="origin/$SYNC_BRANCH"
+            if git merge-base --is-ancestor upstream/master "$start_point" \
+              && git merge-base --is-ancestor HEAD "$start_point"; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          default_branch_sha="$(git rev-parse HEAD)"
+          git switch -C "$SYNC_BRANCH" "$start_point"
+          if ! git merge --no-edit "$default_branch_sha" \
+            || ! git merge --no-edit upstream/master; then
+            git merge --abort || true
+            gh issue create \
+              --title "Upstream sync requires conflict resolution" \
+              --body "The scheduled sync could not merge the current LavaGang/MelonLoader master branch. Review run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            exit 1
+          fi
+
+          git push --force-with-lease origin "$SYNC_BRANCH"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
+  validate-windows:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.branch }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.0.x
+      - run: dotnet restore -p:Platform="x64"
+      - run: dotnet build --no-restore -c Release -p:Platform="x64"
+
+  open-pull-request:
+    needs: [prepare, validate-windows]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or update the upstream sync pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYNC_BRANCH: ${{ needs.prepare.outputs.branch }}
+        run: |
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$SYNC_BRANCH" --base master --json number --jq '.[0].number')"
+          if [ -z "$existing" ]; then
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base master \
+              --head "$SYNC_BRANCH" \
+              --title "Sync LavaGang/MelonLoader upstream" \
+              --body "Automated upstream merge. Windows x64 Release build passed; review XIAOWOLoader network changes before merging."
+          fi

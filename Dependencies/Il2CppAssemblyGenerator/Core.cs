@@ -31,7 +31,22 @@ namespace MelonLoader.Il2CppAssemblyGenerator
         {
             Logger = LoggerInstance;
 
-            webClient = new();
+            var httpHandler = new System.Net.Http.SocketsHttpHandler
+            {
+                ConnectTimeout = System.TimeSpan.FromSeconds(System.Math.Max(1,
+                    System.Math.Min(LoaderConfig.Current.Network.ConnectTimeoutSeconds, 60)))
+            };
+            if (!string.IsNullOrWhiteSpace(LoaderConfig.Current.Network.ProxyUrl))
+            {
+                httpHandler.Proxy = new System.Net.WebProxy(LoaderConfig.Current.Network.ProxyUrl);
+                httpHandler.UseProxy = true;
+            }
+
+            webClient = new(httpHandler)
+            {
+                Timeout = System.TimeSpan.FromSeconds(System.Math.Max(10,
+                    System.Math.Min(LoaderConfig.Current.Network.DownloadTimeoutSeconds, 3600)))
+            };
             webClient.DefaultRequestHeaders.Add("User-Agent", $"{Properties.BuildInfo.Name} v{Properties.BuildInfo.Version}");
 
             AssemblyGenerationNeeded = LoaderConfig.Current.UnityEngine.ForceRegeneration;
