@@ -6,6 +6,12 @@ on:
   push:
     tags:
       - 'xiaowo-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing xiaowo-v* tag to publish or repair
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,17 +21,25 @@ jobs:
     name: Validate version tag
     runs-on: ubuntu-latest
     outputs:
+      tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.value }}
     steps:
       - name: Parse version
         id: version
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#xiaowo-v}"
+          if [[ "$RELEASE_TAG" != xiaowo-v* ]]; then
+            echo "Expected a tag beginning with xiaowo-v" >&2
+            exit 1
+          fi
+          version="${RELEASE_TAG#xiaowo-v}"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "Expected a tag such as xiaowo-v0.7.3-xiaowo.1" >&2
             exit 1
           fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
   build-windows:
@@ -65,11 +79,13 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" packaged/* --clobber
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" packaged/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" packaged/* \
+            gh release create "$RELEASE_TAG" packaged/* \
               --verify-tag \
               --title "XIAOWOLoader ${{ needs.version.outputs.version }}" \
               --generate-notes
