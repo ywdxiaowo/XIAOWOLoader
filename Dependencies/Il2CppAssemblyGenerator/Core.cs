@@ -14,6 +14,7 @@ namespace MelonLoader.Il2CppAssemblyGenerator
         internal static string ManagedPath = null;
 
         internal static HttpClient webClient = null;
+        internal static bool OfflineBundleEnabled { get; private set; }
 
         internal static ExecutablePackage cpp2il = null;
         internal static Cpp2IL_StrippedCodeRegSupport cpp2il_scrs = null;
@@ -66,13 +67,17 @@ namespace MelonLoader.Il2CppAssemblyGenerator
 #endif
             ManagedPath = MelonEnvironment.MelonManagedDirectory;
             BasePath = MelonEnvironment.Il2CppAssemblyGeneratorDirectory;
+            OfflineBundleEnabled = File.Exists(Path.Combine(BasePath, "XIAOWO_OFFLINE_FULL"));
+
+            if (OfflineBundleEnabled)
+                Logger.Msg("Full offline dependency bundle detected. Network access is disabled for assembly generation.");
         }
 
         private static int Run()
         {
             Config.Initialize();
 
-            if (!LoaderConfig.Current.UnityEngine.ForceOfflineGeneration)
+            if (!LoaderConfig.Current.UnityEngine.ForceOfflineGeneration && !OfflineBundleEnabled)
                 RemoteAPI.Contact();
 
             Cpp2IL cpp2IL_netcore = new Cpp2IL();

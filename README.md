@@ -10,7 +10,7 @@
 
 This fork attempts supported GitHub downloads through `cdn.ywdxiaowo.com` first and falls back to the original source when the gateway is unavailable.
 
-Compiled Windows builds are published on the [XIAOWOLoader Releases page](https://github.com/ywdxiaowo/XIAOWOLoader/releases). Download `XIAOWOLoader.Windows.x64.zip` for a normal 64-bit game. The upstream MelonLoader Installer is not included because it may install the official build instead of this fork.
+Compiled Windows builds are published on the [XIAOWOLoader Releases page](https://github.com/ywdxiaowo/XIAOWOLoader/releases). Download `XIAOWOLoader.Windows.x64.zip` for the smaller network-enabled 64-bit build, or `XIAOWOLoader.Windows.x64.Offline.Full.zip` for the complete x64 offline package. Extract the selected archive directly beside the game's executable. The upstream MelonLoader Installer is not included because it may install the official build instead of this fork.
 
 Maintainers can create a release with a dedicated tag that does not trigger the upstream publishing workflow:
 
